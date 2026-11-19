@@ -48,9 +48,9 @@ export default function App() {
   const sum = { sub, delivery, handling, total, form, zone }
 
   if (route.startsWith('/admin')) return <Admin route={route} />
-  const [, , a, b] = route.split('/')
+  const [, a, b] = route.split('/')
   let page
-  if (route === '/') page = <Branches closed={closed} active={st.active} />
+  if (route === '/') page = <Branches closed={closed} active={st.active} info={st.info['חריש']} />
   else if (route === '/home') page = <Home menu={menu} />
   else if (route === '/menu') page = <Menu menu={menu} closed={closed} />
   else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} add={addToCart} closed={closed} />
@@ -59,7 +59,7 @@ export default function App() {
   else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.harish.pay} done={(o) => { update((x) => { x.orders.unshift({ ...o, status: 'חדשה', at: new Date().toLocaleString('he-IL') }); return x }); setOrder(o); setCart([]); go('/done') }} />
   else if (route === '/done') page = <Done order={order} />
   else if (route === '/promos') page = <Promos />
-  else if (route === '/info') page = <Info />
+  else if (route === '/info') page = <Info info={st.info['חריש']} />
   else if (route === '/states') page = <States />
   else page = <States notFound />
 
@@ -83,7 +83,7 @@ export default function App() {
       <footer className="ftr">
         <b>פיצה סטורי</b>
         <div><a href="#/info">צור קשר</a> · <a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a> · <a href="#/states">מצבי מערכת</a></div>
-        <small>{BRANCH.phone} · {BRANCH.email} · {BRANCH.kosher}</small>
+        <small>{st.info['חריש'].phone} · {BRANCH.email} · {BRANCH.kosher}</small>
       </footer>
       {!cookies && (
         <div className="cookies" role="dialog" aria-label="העדפות עוגיות">
@@ -96,7 +96,7 @@ export default function App() {
   )
 }
 
-function Branches({ closed, active }) {
+function Branches({ closed, active, info }) {
   const [sort, setSort] = useState('az')
   const [city, setCity] = useState('')
   const list = BRANCHES.map((b) => ({ ...b, active: active[b.city] }))
@@ -120,7 +120,7 @@ function Branches({ closed, active }) {
         <div className="card branch">
           <div>
             <h3>{BRANCH.name}</h3>
-            <p>{BRANCH.address}<br />א׳–ה׳ 11:00–23:00 · שישי 11:00–15:00</p>
+            <p>{info.address}<br />{info.hours.split('\n')[0]}</p>
             <span className={'tag ' + (closed ? 'bad' : 'ok')}>{closed ? 'סגור כרגע' : 'פתוח עכשיו'}</span>
           </div>
           <a className="btn" href="#/home">המשך להזמנה</a>
@@ -131,6 +131,7 @@ function Branches({ closed, active }) {
 }
 
 function Home({ menu }) {
+  const info = useStore().info['חריש']
   const top = menu.filter((p) => p.cat === 'פיצות').slice(0, 3)
   return (
     <>
@@ -153,7 +154,7 @@ function Home({ menu }) {
           <a className="btn" href="#/promos">לפרטי המבצע</a>
         </div>
         <h2>פרטי הסניף</h2>
-        <p>{BRANCH.address} · {BRANCH.phone}</p>
+        <p>{info.address} · {info.phone}</p>
       </section>
     </>
   )
@@ -207,7 +208,8 @@ function Product({ p, add, closed }) {
       <Back to="/menu">חזרה לתפריט</Back>
       <Img img={p.img} hue={p.hue} big />
       <h1>{p.name}</h1>
-      <p className="muted">{p.desc}</p>
+      <p>{p.desc}</p>
+      <dl className="kv info"><dt>קטגוריה</dt><dd>{p.cat}</dd><dt>כשרות</dt><dd>{BRANCH.kosher}</dd><dt>מחיר</dt><dd>{ils(p.price)}</dd></dl>
       {p.out && <div className="alert bad" role="status">המוצר אזל זמנית ולא ניתן להוסיפו לסל.</div>}
       {p.pizza && (
         <>
@@ -261,6 +263,7 @@ function Cart({ cart, sum, setQty, del, closed }) {
 }
 
 function Checkout({ form, setForm, sum, min, cart }) {
+  const info = useStore().info['חריש']
   const [errs, setErrs] = useState({})
   if (!cart.length) return <section className="wrap narrow"><p className="empty">הסל ריק.</p><a className="btn" href="#/menu">לתפריט</a></section>
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
@@ -305,7 +308,7 @@ function Checkout({ form, setForm, sum, min, cart }) {
           {sum.zone && <p className="muted">זמן משלוח משוער: {sum.zone.eta} · מינימום הזמנה: {ils(sum.zone.min)}{sum.zone.free ? ` · משלוח חינם מעל ${ils(sum.zone.free)}` : ''}</p>}
           {short && <div className="alert warn" role="alert">חסרים {ils(min - sum.sub)} להגעה למינימום הזמנה למשלוח ל{form.city}.</div>}
         </>
-      ) : <p className="muted">איסוף מ{BRANCH.address}. זמן הכנה משוער: 15–20 דק׳.</p>}
+      ) : <p className="muted">איסוף מ{info.address}. זמן הכנה משוער: 15–20 דק׳.</p>}
       <Summary s={sum} />
       <button className="btn full" disabled={out || short} onClick={next}>המשך לתשלום</button>
     </section>
@@ -313,6 +316,7 @@ function Checkout({ form, setForm, sum, min, cart }) {
 }
 
 function Pay({ sum, cart, pay, done }) {
+  const info = useStore().info['חריש']
   const methods = [['cash', 'מזומן'], ['credit', 'אשראי'], ['simply', 'Simply']].filter(([k]) => pay[k])
   const [m, setM] = useState(methods[0]?.[0])
   const [ok, setOk] = useState(false)
@@ -321,7 +325,7 @@ function Pay({ sum, cart, pay, done }) {
   if (!methods.length) return <section className="wrap narrow"><div className="alert bad" role="alert">אין כרגע אמצעי תשלום זמין בסניף.</div></section>
   const place = () => {
     setBusy(true)
-    setTimeout(() => done({ no: 'PS-' + (10000 + Math.floor(Math.random() * 89999)), items: cart, sum, method: methods.find(([k]) => k === m)[1] }), 1200)
+    setTimeout(() => done({ address: info.address, no: 'PS-' + (10000 + Math.floor(Math.random() * 89999)), items: cart, sum, method: methods.find(([k]) => k === m)[1] }), 1200)
   }
   return (
     <section className="wrap narrow">
@@ -344,7 +348,7 @@ function Done({ order }) {
   return (
     <section className="wrap narrow">
       <div className="alert ok" role="status"><h1>ההזמנה התקבלה! ✓</h1>מספר הזמנה: <b>{order.no}</b> (הזמנת דמה)</div>
-      <p><b>{BRANCH.name}</b> · {BRANCH.address}<br />{order.sum.form.mode === 'pickup' ? 'איסוף עצמי' : `משלוח ל${order.sum.form.street} ${order.sum.form.num}, ${order.sum.form.city}`}<br />תשלום: {order.method}</p>
+      <p><b>{BRANCH.name}</b> · {order.address}<br />{order.sum.form.mode === 'pickup' ? 'איסוף עצמי' : `משלוח ל${order.sum.form.street} ${order.sum.form.num}, ${order.sum.form.city}`}<br />תשלום: {order.method}</p>
       {order.items.map((i) => <div key={i.key} className="spread"><span>{i.qty}× {i.name} <small className="muted">{i.detail}</small></span><b>{ils(i.price * i.qty)}</b></div>)}
       <Summary s={order.sum} />
       <a className="btn full" href="#/home">חזרה לדף הבית</a>
@@ -367,13 +371,13 @@ function Promos() {
   )
 }
 
-function Info() {
+function Info({ info }) {
   return (
     <section className="wrap narrow">
       <h1>מידע ויצירת קשר</h1>
-      <p>{BRANCH.name}<br />מוקד: <a href="tel:*3606">{BRANCH.phone}</a><br />דוא״ל: <a href={'mailto:' + BRANCH.email}>{BRANCH.email}</a></p>
+      <p>{BRANCH.name}<br />{info.address}<br />טלפון: <a href={'tel:' + info.phone}>{info.phone}</a><br />דוא״ל: <a href={'mailto:' + BRANCH.email}>{BRANCH.email}</a></p>
       <h2>שעות פעילות</h2>
-      <ul>{BRANCH.hours.map(([d, h]) => <li key={d}>{d}: {h}</li>)}</ul>
+      <ul>{info.hours.split('\n').map((l) => <li key={l}>{l}</li>)}</ul>
       <h2>כשרות</h2><p>{BRANCH.kosher}</p>
       <h2>מדיניות ונגישות</h2>
       <p><a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות (באתר הרשמי)</a></p>
