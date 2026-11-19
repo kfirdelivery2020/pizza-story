@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { BRANCH, BRANCHES, ZONES, CATS, PRODUCTS, SIZES, EXTRAS, PROMOS } from './data.js'
+import { BRANCH, BRANCHES, ZONES, CATS, EXTRAS, PROMOS } from './data.js'
+import { useStore, update } from './store.js'
+import Admin from './Admin.jsx'
 
 const go = (p) => { location.hash = p }
 const ils = (n) => `₪${n}`
@@ -12,7 +14,7 @@ const useHash = () => {
   }, [])
   return h
 }
-const Img = ({ hue, big }) => (
+const Img = ({ hue = 20, img, big }) => img ? <img className={'img' + (big ? ' big' : '')} src={img} alt="" loading="lazy" /> : (
   <div className={'img' + (big ? ' big' : '')} style={{ background: `linear-gradient(135deg,hsl(${hue} 70% 82%),hsl(${hue} 60% 62%))` }} role="img" aria-label="תמונת דמה של המוצר">🍕</div>
 )
 const Back = ({ to, children }) => <a className="back" href={'#' + to}>→ {children}</a>
@@ -20,7 +22,9 @@ const Back = ({ to, children }) => <a className="back" href={'#' + to}>→ {chil
 export default function App() {
   const route = useHash()
   const [cart, setCart] = useState([])
-  const [closed, setClosed] = useState(false)
+  const st = useStore()
+  const closed = !st.harish.open
+  const menu = st.menu.filter((p) => !p.hidden).map((p) => ({ ...p, out: st.harish.out.includes(p.id) }))
   const [cookies, setCookies] = useState(() => localStorage.getItem('ck') || '')
   const [form, setForm] = useState({ mode: 'delivery', name: '', phone: '', city: 'חריש', street: '', num: '', apt: '', floor: '', ent: '', note: '' })
   const [order, setOrder] = useState(null)
@@ -43,15 +47,16 @@ export default function App() {
   const del = (key) => setCart((c) => c.filter((i) => i.key !== key))
   const sum = { sub, delivery, handling, total, form, zone }
 
+  if (route.startsWith('/admin')) return <Admin route={route} />
   const [, , a, b] = route.split('/')
   let page
-  if (route === '/') page = <Branches closed={closed} />
-  else if (route === '/home') page = <Home />
-  else if (route === '/menu') page = <Menu closed={closed} />
-  else if (a === 'product') page = <Product p={PRODUCTS.find((x) => x.id === +b)} add={addToCart} closed={closed} />
+  if (route === '/') page = <Branches closed={closed} active={st.active} />
+  else if (route === '/home') page = <Home menu={menu} />
+  else if (route === '/menu') page = <Menu menu={menu} closed={closed} />
+  else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} add={addToCart} closed={closed} />
   else if (route === '/cart') page = <Cart cart={cart} sum={sum} setQty={setQty} del={del} closed={closed} />
   else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} />
-  else if (route === '/pay') page = <Pay sum={sum} cart={cart} done={(o) => { setOrder(o); setCart([]); go('/done') }} />
+  else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.harish.pay} done={(o) => { update((x) => { x.orders.unshift({ ...o, status: 'חדשה', at: new Date().toLocaleString('he-IL') }); return x }); setOrder(o); setCart([]); go('/done') }} />
   else if (route === '/done') page = <Done order={order} />
   else if (route === '/promos') page = <Promos />
   else if (route === '/info') page = <Info />
@@ -61,9 +66,7 @@ export default function App() {
   return (
     <>
       <a className="skip" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main').focus() }}>דלג לתוכן</a>
-      <div className="demo">אתר דמה – כל הנתונים להמחשה בלבד, אין סליקה ואין הזמנה אמיתית
-        <label><input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> הדמיית סניף סגור</label>
-      </div>
+      <div className="demo">אתר דמה – אין סליקה ואין הזמנה אמיתית</div>
       {route !== '/' && (
         <header className="hdr">
           <a className="logo" href="#/home"><img src="logo.png" alt="פיצה סטורי – לדף הבית" /></a>
@@ -79,8 +82,8 @@ export default function App() {
       </main>
       <footer className="ftr">
         <b>פיצה סטורי</b>
-        <div><a href="#/info">צור קשר</a> · <a href="#/info">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a> · <a href="#/states">מצבי מערכת</a></div>
-        <small>{BRANCH.address} · {BRANCH.phone} · {BRANCH.kosher}</small>
+        <div><a href="#/info">צור קשר</a> · <a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a> · <a href="#/states">מצבי מערכת</a></div>
+        <small>{BRANCH.phone} · {BRANCH.email} · {BRANCH.kosher}</small>
       </footer>
       {!cookies && (
         <div className="cookies" role="dialog" aria-label="העדפות עוגיות">
@@ -93,9 +96,10 @@ export default function App() {
   )
 }
 
-function Branches({ closed }) {
+function Branches({ closed, active }) {
   const [sort, setSort] = useState('az')
   const [city, setCity] = useState('')
+  const list = BRANCHES.map((b) => ({ ...b, active: active[b.city] }))
   const opt = (b) => <option key={b.city} value={b.city} disabled={!b.active}>{b.city}{b.active ? '' : ' (בקרוב)'}</option>
   const regions = [...new Set(BRANCHES.map((b) => b.region))]
   return (
@@ -109,10 +113,10 @@ function Branches({ closed }) {
       <label className="lbl">בחרו סניף
         <select className="field" value={city} onChange={(e) => setCity(e.target.value)}>
           <option value="">בחרו סניף מהרשימה…</option>
-          {sort === 'az' ? BRANCHES.map(opt) : regions.map((r) => <optgroup key={r} label={r}>{BRANCHES.filter((b) => b.region === r).map(opt)}</optgroup>)}
+          {sort === 'az' ? list.map(opt) : regions.map((r) => <optgroup key={r} label={r}>{list.filter((b) => b.region === r).map(opt)}</optgroup>)}
         </select>
       </label>
-      {city === 'חריש' && (
+      {city === 'חריש' && active['חריש'] && (
         <div className="card branch">
           <div>
             <h3>{BRANCH.name}</h3>
@@ -126,8 +130,8 @@ function Branches({ closed }) {
   )
 }
 
-function Home() {
-  const top = PRODUCTS.filter((p) => p.cat === 'פיצות').slice(0, 3)
+function Home({ menu }) {
+  const top = menu.filter((p) => p.cat === 'פיצות').slice(0, 3)
   return (
     <>
       <section className="hero wrap">
@@ -137,7 +141,7 @@ function Home() {
           <p>בצק שנאפה בשבילכם, תוספות שאתם אוהבים. הזמינו למשלוח או לאיסוף עצמי.</p>
           <div className="row"><a className="btn" href="#/menu">להזמנה</a><a className="btn ghost" href="#/promos">למבצעים</a></div>
         </div>
-        <Img hue={8} big />
+        <Img img="img/regular.webp" big />
       </section>
       <section className="wrap">
         <h2>קטגוריות</h2>
@@ -158,7 +162,7 @@ function Home() {
 function ProductCard({ p, closed }) {
   return (
     <article className={'card prod' + (p.out ? ' out' : '')}>
-      <a href={'#/product/' + p.id}><Img hue={p.hue} /></a>
+      <a href={'#/product/' + p.id}><Img img={p.img} hue={p.hue} /></a>
       <div className="pad">
         <h3>{p.name}</h3>
         <p className="muted">{p.desc}</p>
@@ -171,10 +175,10 @@ function ProductCard({ p, closed }) {
   )
 }
 
-function Menu({ closed }) {
+function Menu({ menu, closed }) {
   const [cat, setCat] = useState('הכל')
   const [q, setQ] = useState('')
-  const list = PRODUCTS.filter((p) => (cat === 'הכל' || p.cat === cat) && (p.name + p.desc).includes(q))
+  const list = menu.filter((p) => (cat === 'הכל' || p.cat === cat) && (p.name + p.desc).includes(q))
   return (
     <section className="wrap">
       <h1>התפריט שלנו</h1>
@@ -188,32 +192,25 @@ function Menu({ closed }) {
 }
 
 function Product({ p, add, closed }) {
-  const [size, setSize] = useState(null)
   const [ex, setEx] = useState([])
   const [rm, setRm] = useState([])
   const [note, setNote] = useState('')
   const [qty, setQty] = useState(1)
-  const [err, setErr] = useState(false)
   if (!p) return <States notFound />
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
-  const unit = p.price + (p.simple ? 0 : SIZES[size ?? 0][1] + ex.reduce((a, n) => a + EXTRAS.find((e) => e[0] === n)[1], 0))
+  const unit = p.price + ex.reduce((a, n) => a + EXTRAS.find((e) => e[0] === n)[1], 0)
   const submit = () => {
-    if (!p.simple && size === null) return setErr(true)
-    add({ key: [p.id, size, ex, rm, note].join('|'), name: p.name, detail: [!p.simple && SIZES[size][0], ...ex.map((x) => '+' + x), ...rm.map((x) => 'בלי ' + x), note].filter(Boolean).join(' · '), price: unit, qty })
+    add({ key: [p.id, ex, rm, note].join('|'), name: p.name, detail: [...ex.map((x) => '+' + x), ...rm.map((x) => 'בלי ' + x), note].filter(Boolean).join(' · '), price: unit, qty })
   }
   return (
     <section className="wrap narrow">
       <Back to="/menu">חזרה לתפריט</Back>
-      <Img hue={p.hue} big />
+      <Img img={p.img} hue={p.hue} big />
       <h1>{p.name}</h1>
       <p className="muted">{p.desc}</p>
       {p.out && <div className="alert bad" role="status">המוצר אזל זמנית ולא ניתן להוסיפו לסל.</div>}
-      {!p.simple && (
+      {p.pizza && (
         <>
-          <fieldset><legend>גודל <span className="req">חובה</span></legend>
-            {SIZES.map(([n, a], i) => <label key={n} className="opt"><input type="radio" name="size" checked={size === i} onChange={() => { setSize(i); setErr(false) }} /> {n} <em>{a ? '+' + ils(a) : ''}</em></label>)}
-            {err && <p className="error" role="alert">יש לבחור גודל</p>}
-          </fieldset>
           <fieldset><legend>תוספות <span className="opt-tag">רשות</span></legend>
             {EXTRAS.map(([n, pr, ok]) => <label key={n} className={'opt' + (ok ? '' : ' dis')}><input type="checkbox" disabled={!ok} checked={ex.includes(n)} onChange={() => toggle(ex, setEx, n)} /> {n} <em>{ok ? '+' + ils(pr) : 'לא זמין'}</em></label>)}
           </fieldset>
@@ -315,12 +312,13 @@ function Checkout({ form, setForm, sum, min, cart }) {
   )
 }
 
-function Pay({ sum, cart, done }) {
-  const methods = [['cash', 'מזומן'], ['credit', 'אשראי'], ['simply', 'Simply']].filter(([k]) => BRANCH.pay[k])
-  const [m, setM] = useState(methods[0][0])
+function Pay({ sum, cart, pay, done }) {
+  const methods = [['cash', 'מזומן'], ['credit', 'אשראי'], ['simply', 'Simply']].filter(([k]) => pay[k])
+  const [m, setM] = useState(methods[0]?.[0])
   const [ok, setOk] = useState(false)
   const [busy, setBusy] = useState(false)
   if (!cart.length) return <section className="wrap narrow"><p className="empty">הסל ריק.</p></section>
+  if (!methods.length) return <section className="wrap narrow"><div className="alert bad" role="alert">אין כרגע אמצעי תשלום זמין בסניף.</div></section>
   const place = () => {
     setBusy(true)
     setTimeout(() => done({ no: 'PS-' + (10000 + Math.floor(Math.random() * 89999)), items: cart, sum, method: methods.find(([k]) => k === m)[1] }), 1200)
@@ -373,12 +371,13 @@ function Info() {
   return (
     <section className="wrap narrow">
       <h1>מידע ויצירת קשר</h1>
-      <p>{BRANCH.address}<br />טלפון: <a href={'tel:' + BRANCH.phone}>{BRANCH.phone}</a></p>
+      <p>{BRANCH.name}<br />מוקד: <a href="tel:*3606">{BRANCH.phone}</a><br />דוא״ל: <a href={'mailto:' + BRANCH.email}>{BRANCH.email}</a></p>
       <h2>שעות פעילות</h2>
       <ul>{BRANCH.hours.map(([d, h]) => <li key={d}>{d}: {h}</li>)}</ul>
       <h2>כשרות</h2><p>{BRANCH.kosher}</p>
       <h2>מדיניות ונגישות</h2>
-      <p className="muted">עמודי הצהרת נגישות, פרטיות, תקנון, ביטולים והחזרים ותנאי משלוח – טיוטה. יש להשלים טקסטים משפטיים לפני ההשקה.</p>
+      <p><a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות (באתר הרשמי)</a></p>
+      <p className="muted">מדיניות פרטיות, תקנון, ביטולים והחזרים ותנאי משלוח – טיוטה. אין עמודים כאלה באתר הרשמי; יש להשלים לפני ההשקה.</p>
     </section>
   )
 }

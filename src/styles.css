@@ -51,7 +51,9 @@ fieldset{border:1px solid var(--line);border-radius:var(--r);margin:14px 0;paddi
 .logo img{height:52px;display:block}
 .hdr{background:#000;border-color:#000;color:#fff}.hdr .btn{border-color:#fff}
 .pick{max-width:560px;margin:0 auto;padding:24px 20px;text-align:center}
-.biglogo{width:min(280px,70vw);display:block;margin:0 auto 8px;background:#000;border-radius:50%}
+.biglogo{width:min(280px,70vw);display:block;margin:0 auto 8px;background:#000}
 .pick .field,.pick .lbl{text-align:start}.pick .branch{text-align:start}
 body:has(.pick){background:#000;color:#fff}body:has(.pick) .muted{color:#bbb}body:has(.pick) .card{color:var(--dark)}
 body:has(.pick) .seg button{background:#000;color:#fff}body:has(.pick) .seg .on{background:var(--red)}
+.adm .hdr{justify-content:space-between}.adm .hdr nav a{color:#fff}
+.arow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 14px;margin:8px 0}.arow .field{margin:0;flex:1;min-width:130px}.arow .field.price{max-width:90px;flex:none}
