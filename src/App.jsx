@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BRANCH, ZONES, CATS, PRODUCTS, SIZES, EXTRAS, PROMOS } from './data.js'
+import { BRANCH, BRANCHES, ZONES, CATS, PRODUCTS, SIZES, EXTRAS, PROMOS } from './data.js'
 
 const go = (p) => { location.hash = p }
 const ils = (n) => `₪${n}`
@@ -66,7 +66,7 @@ export default function App() {
       </div>
       {route !== '/' && (
         <header className="hdr">
-          <a className="logo" href="#/home">פיצה סטורי</a>
+          <a className="logo" href="#/home"><img src="logo.png" alt="פיצה סטורי – לדף הבית" /></a>
           <nav aria-label="ראשי">
             <a href="#/home">בית</a><a href="#/menu">תפריט</a><a href="#/promos">מבצעים</a><a href="#/info">צור קשר</a>
           </nav>
@@ -94,19 +94,35 @@ export default function App() {
 }
 
 function Branches({ closed }) {
+  const [sort, setSort] = useState('az')
+  const [city, setCity] = useState('')
+  const opt = (b) => <option key={b.city} value={b.city} disabled={!b.active}>{b.city}{b.active ? '' : ' (בקרוב)'}</option>
+  const regions = [...new Set(BRANCHES.map((b) => b.region))]
   return (
-    <section className="wrap narrow">
-      <h1 className="logo big">פיצה סטורי</h1>
-      <h2>באיזה סניף תרצו להזמין?</h2>
-      <div className="card branch">
-        <div>
-          <h3>{BRANCH.name}</h3>
-          <p>{BRANCH.address}<br />א׳–ה׳ 11:00–23:00 · שישי 11:00–15:00</p>
-          <span className={'tag ' + (closed ? 'bad' : 'ok')}>{closed ? 'סגור כרגע' : 'פתוח עכשיו'}</span>
-        </div>
-        <a className="btn" href="#/home">בחירה והמשך</a>
+    <section className="pick">
+      <img className="biglogo" src="logo.png" alt="פיצה סטורי – הטעם זה כל הסיפור" />
+      <h1>באיזה סניף תרצו להזמין?</h1>
+      <div className="seg" role="group" aria-label="מיון הרשימה">
+        <button className={sort === 'az' ? 'on' : ''} aria-pressed={sort === 'az'} onClick={() => setSort('az')}>לפי א׳–ב׳</button>
+        <button className={sort === 'region' ? 'on' : ''} aria-pressed={sort === 'region'} onClick={() => setSort('region')}>לפי אזור</button>
       </div>
-      <p className="muted">סניפים נוספים יתווספו בקרוב.</p>
+      <label className="lbl">בחרו סניף
+        <select className="field" value={city} onChange={(e) => setCity(e.target.value)}>
+          <option value="">בחרו סניף מהרשימה…</option>
+          {sort === 'az' ? BRANCHES.map(opt) : regions.map((r) => <optgroup key={r} label={r}>{BRANCHES.filter((b) => b.region === r).map(opt)}</optgroup>)}
+        </select>
+      </label>
+      {city === 'חריש' && (
+        <div className="card branch">
+          <div>
+            <h3>{BRANCH.name}</h3>
+            <p>{BRANCH.address}<br />א׳–ה׳ 11:00–23:00 · שישי 11:00–15:00</p>
+            <span className={'tag ' + (closed ? 'bad' : 'ok')}>{closed ? 'סגור כרגע' : 'פתוח עכשיו'}</span>
+          </div>
+          <a className="btn" href="#/home">המשך להזמנה</a>
+        </div>
+      )}
+      <p className="muted">כרגע פעיל רק סניף חריש. שאר הסניפים יתווספו בקרוב.</p>
     </section>
   )
 }
