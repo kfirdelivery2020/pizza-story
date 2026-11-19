@@ -122,7 +122,6 @@ function Branches({ closed }) {
           <a className="btn" href="#/home">המשך להזמנה</a>
         </div>
       )}
-      <p className="muted">כרגע פעיל רק סניף חריש. שאר הסניפים יתווספו בקרוב.</p>
     </section>
   )
 }
