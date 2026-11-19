@@ -32,9 +32,9 @@ export default function App() {
   const br = st.branch
   // אם שירות (משלוח/איסוף) כבוי בסניף, עוברים אוטומטית לשירות הפעיל
   const mode = form0.mode === 'delivery' && !br.delivery && br.pickup ? 'pickup' : form0.mode === 'pickup' && !br.pickup && br.delivery ? 'delivery' : form0.mode
-  const form = { ...form0, mode, branch: st.cur, city: form0.city === 'אחר' || zones.some((z) => z.city === form0.city) ? form0.city : zones[0].city }
   // אזורי משלוח מפורטים קיימים כרגע רק לחריש; לשאר הסניפים אזור ברירת מחדל (העיר עצמה)
   const zones = st.cur === 'חריש' ? ZONES : [{ city: st.cur, fee: 0, min: 0, free: 0, eta: '45–60 דק׳' }]
+  const form = { ...form0, mode, branch: st.cur, city: form0.city === 'אחר' || zones.some((z) => z.city === form0.city) ? form0.city : zones[0].city }
   const zone = zones.find((z) => z.city === form.city)
   const sub = cart.reduce((a, i) => a + i.price * i.qty, 0)
   const delivery = form.mode === 'pickup' ? 0 : zone ? (zone.free && sub >= zone.free ? 0 : zone.fee) : 0
