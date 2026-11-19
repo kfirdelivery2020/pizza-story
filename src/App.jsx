@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BRANCH, BRANCHES, ZONES, CATS, EXTRAS, PROMOS } from './data.js'
-import { useStore, actions, load } from './store.js'
+import { useStore, useInfo, actions, load, selectBranch } from './store.js'
 import Admin from './Admin.jsx'
 
 const go = (p) => { location.hash = p }
@@ -32,8 +32,10 @@ export default function App() {
   const br = st.branch
   // אם שירות (משלוח/איסוף) כבוי בסניף, עוברים אוטומטית לשירות הפעיל
   const mode = form0.mode === 'delivery' && !br.delivery && br.pickup ? 'pickup' : form0.mode === 'pickup' && !br.pickup && br.delivery ? 'delivery' : form0.mode
-  const form = { ...form0, mode }
-  const zone = ZONES.find((z) => z.city === form.city)
+  const form = { ...form0, mode, branch: st.cur, city: form0.city === 'אחר' || zones.some((z) => z.city === form0.city) ? form0.city : zones[0].city }
+  // אזורי משלוח מפורטים קיימים כרגע רק לחריש; לשאר הסניפים אזור ברירת מחדל (העיר עצמה)
+  const zones = st.cur === 'חריש' ? ZONES : [{ city: st.cur, fee: 0, min: 0, free: 0, eta: '45–60 דק׳' }]
+  const zone = zones.find((z) => z.city === form.city)
   const sub = cart.reduce((a, i) => a + i.price * i.qty, 0)
   const delivery = form.mode === 'pickup' ? 0 : zone ? (zone.free && sub >= zone.free ? 0 : zone.fee) : 0
   const min = form.mode === 'pickup' ? 0 : zone ? zone.min : 0
@@ -55,16 +57,16 @@ export default function App() {
   if (!st.ready) return <p className="empty" role="status">{st.error ? <>שגיאה בטעינת הנתונים. <button className="link" onClick={load}>נסו שוב</button></> : 'טוען…'}</p>
   const [, a, b] = route.split('/')
   let page
-  if (route === '/') page = <Branches closed={closed} active={st.active} info={st.info['חריש']} />
+  if (route === '/') page = <Branches active={st.active} info={st.info} />
   else if (route === '/home') page = <Home menu={menu} />
   else if (route === '/menu') page = <Menu menu={menu} closed={closed} />
   else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} add={addToCart} closed={closed} />
   else if (route === '/cart') page = <Cart cart={cart} sum={sum} setQty={setQty} del={del} closed={closed} />
-  else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} br={br} />
+  else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} br={br} zones={zones} />
   else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.branch.pay} done={async (o, key) => { const err = await actions.addOrder(o, key); if (err) { alert('שליחת ההזמנה נכשלה: ' + err.message); return false } setOrder(o); setCart([]); go('/done') }} />
   else if (route === '/done') page = <Done order={order} />
   else if (route === '/promos') page = <Promos />
-  else if (route === '/info') page = <Info info={st.info['חריש']} />
+  else if (route === '/info') page = <Info info={st.info[st.cur]} />
   else if (route === '/states') page = <States />
   else page = <States notFound />
 
@@ -87,7 +89,7 @@ export default function App() {
       <footer className="ftr">
         <b>פיצה סטורי</b>
         <div><a href="#/info">צור קשר</a> · <a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a></div>
-        <small>{st.info['חריש'].phone} · {BRANCH.email} · {BRANCH.kosher}</small>
+        <small>{st.info[st.cur].phone} · {BRANCH.email} · {BRANCH.kosher}</small>
       </footer>
       {!cookies && (
         <div className="cookies" role="dialog" aria-label="העדפות עוגיות">
@@ -100,7 +102,7 @@ export default function App() {
   )
 }
 
-function Branches({ closed, active, info }) {
+function Branches({ active, info: allInfo }) {
   const [sort, setSort] = useState('az')
   const [city, setCity] = useState('')
   const list = BRANCHES.map((b) => ({ ...b, active: active[b.city] }))
@@ -120,14 +122,13 @@ function Branches({ closed, active, info }) {
           {sort === 'az' ? list.map(opt) : regions.map((r) => <optgroup key={r} label={r}>{list.filter((b) => b.region === r).map(opt)}</optgroup>)}
         </select>
       </label>
-      {city === 'חריש' && active['חריש'] && (
+      {city && active[city] && (
         <div className="card branch">
           <div>
-            <h3>{BRANCH.name}</h3>
-            <p>{info.address}<br />{info.hours.split('\n')[0]}</p>
-            <span className={'tag ' + (closed ? 'bad' : 'ok')}>{closed ? 'סגור כרגע' : 'פתוח עכשיו'}</span>
+            <h3>פיצה סטורי – {city}</h3>
+            <p>{allInfo[city]?.address || city}{allInfo[city]?.hours && <><br />{allInfo[city].hours.split('\n')[0]}</>}</p>
           </div>
-          <a className="btn" href="#/home">המשך להזמנה</a>
+          <button className="btn" onClick={async () => { await selectBranch(city); go('/home') }}>המשך להזמנה</button>
         </div>
       )}
     </section>
@@ -135,13 +136,14 @@ function Branches({ closed, active, info }) {
 }
 
 function Home({ menu }) {
-  const info = useStore().info['חריש']
+  const info = useInfo()
+  const cur = useStore().cur
   const top = menu.filter((p) => p.cat === 'פיצות').slice(0, 3)
   return (
     <>
       <section className="hero wrap">
         <div>
-          <p className="muted">{BRANCH.name}</p>
+          <p className="muted">פיצה סטורי – {cur}</p>
           <h1>כל מגש, סיפור אהבה.</h1>
           <p>בצק שנאפה בשבילכם, תוספות שאתם אוהבים. הזמינו למשלוח או לאיסוף עצמי.</p>
           <div className="row"><a className="btn" href="#/menu">להזמנה</a><a className="btn ghost" href="#/promos">למבצעים</a></div>
@@ -266,8 +268,8 @@ function Cart({ cart, sum, setQty, del, closed }) {
   )
 }
 
-function Checkout({ form, setForm, sum, min, cart, br }) {
-  const info = useStore().info['חריש']
+function Checkout({ form, setForm, sum, min, cart, br, zones }) {
+  const info = useInfo()
   const [errs, setErrs] = useState({})
   if (!cart.length) return <section className="wrap narrow"><p className="empty">הסל ריק.</p><a className="btn" href="#/menu">לתפריט</a></section>
   if (!br.delivery && !br.pickup) return <section className="wrap narrow"><div className="alert bad" role="alert">הסניף לא מקבל הזמנות כרגע (אין משלוח ואין איסוף עצמי).</div></section>
@@ -303,7 +305,7 @@ function Checkout({ form, setForm, sum, min, cart, br }) {
         <>
           <label className="lbl">עיר
             <select className="field" value={form.city} onChange={set('city')}>
-              {ZONES.map((z) => <option key={z.city}>{z.city}</option>)}<option value="אחר">עיר אחרת</option>
+              {zones.map((z) => <option key={z.city}>{z.city}</option>)}<option value="אחר">עיר אחרת</option>
             </select>
           </label>
           {F({k:"street", label:"רחוב" })}{F({k:"num", label:"מספר בית", inputMode:"numeric" })}
@@ -321,7 +323,7 @@ function Checkout({ form, setForm, sum, min, cart, br }) {
 }
 
 function Pay({ sum, cart, pay, done }) {
-  const info = useStore().info['חריש']
+  const info = useInfo()
   const methods = [['cash', 'מזומן'], ['credit', 'אשראי'], ['simply', 'Simply']].filter(([k]) => pay[k])
   const [m, setM] = useState(methods[0]?.[0])
   const [ok, setOk] = useState(false)
@@ -353,7 +355,7 @@ function Done({ order }) {
   return (
     <section className="wrap narrow">
       <div className="alert ok" role="status"><h1>ההזמנה התקבלה! ✓</h1>מספר הזמנה: <b>{order.no}</b></div>
-      <p><b>{BRANCH.name}</b> · {order.address}<br />{order.sum.form.mode === 'pickup' ? 'איסוף עצמי' : `משלוח ל${order.sum.form.street} ${order.sum.form.num}, ${order.sum.form.city}`}<br />תשלום: {order.method}</p>
+      <p><b>פיצה סטורי – {order.sum.form.branch}</b> · {order.address}<br />{order.sum.form.mode === 'pickup' ? 'איסוף עצמי' : `משלוח ל${order.sum.form.street} ${order.sum.form.num}, ${order.sum.form.city}`}<br />תשלום: {order.method}</p>
       {order.items.map((i) => <div key={i.key} className="spread"><span>{i.qty}× {i.name} <small className="muted">{i.detail}</small></span><b>{ils(i.price * i.qty)}</b></div>)}
       <Summary s={order.sum} />
       <a className="btn full" href="#/home">חזרה לדף הבית</a>
@@ -380,7 +382,7 @@ function Info({ info }) {
   return (
     <section className="wrap narrow">
       <h1>מידע ויצירת קשר</h1>
-      <p>{BRANCH.name}<br />{info.address}<br />טלפון: <a href={'tel:' + info.phone}>{info.phone}</a><br />דוא״ל: <a href={'mailto:' + BRANCH.email}>{BRANCH.email}</a></p>
+      <p>פיצה סטורי – {useStore().cur}<br />{info.address}<br />טלפון: <a href={'tel:' + info.phone}>{info.phone}</a><br />דוא״ל: <a href={'mailto:' + BRANCH.email}>{BRANCH.email}</a></p>
       <h2>שעות פעילות</h2>
       <ul>{info.hours.split('\n').map((l) => <li key={l}>{l}</li>)}</ul>
       <h2>כשרות</h2><p>{BRANCH.kosher}</p>

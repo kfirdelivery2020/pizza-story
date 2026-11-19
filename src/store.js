@@ -13,6 +13,8 @@ const COLS = { cat: 'category', desc: 'description', img: 'image_url', pizza: 'i
 const toRow = (patch) => Object.fromEntries(Object.entries(patch).map(([k, v]) => [COLS[k] || k, k === 'img' ? v || null : v]))
 
 let state = { ready: false, error: '', menu: [], active: {}, info: {}, ids: {}, cur: 'חריש', branch: { open: true, delivery: true, pickup: true, pay: { cash: true, credit: false, simply: false }, out: [] }, orders: [] }
+// הסניף שהלקוח בחר נשמר לרענון הדף
+if (sessionStorage.getItem('ps-branch')) state.cur = sessionStorage.getItem('ps-branch')
 const subs = new Set()
 const emit = () => subs.forEach((f) => f())
 const set = (fn) => { state = fn(structuredClone(state)); emit() }
@@ -67,7 +69,7 @@ export const actions = {
   async addOrder(o, methodKey) {
     const f = o.sum.form
     const { error } = await sb.from('orders').insert({
-      number: o.no, branch_id: state.ids['חריש'], mode: f.mode, payment_method: methodKey,
+      number: o.no, branch_id: state.ids[state.cur], mode: f.mode, payment_method: methodKey,
       customer: { name: f.name, phone: f.phone, city: f.city, street: f.street, num: f.num, apt: f.apt, floor: f.floor, ent: f.ent, note: f.note },
       items: o.items, subtotal: o.sum.sub, delivery: o.sum.delivery, handling: o.sum.handling, total: o.sum.total,
     })
@@ -101,7 +103,9 @@ export async function manageStaff(body) {
   const j = await error.context?.json?.().catch(() => null)
   return { error: j?.error || error.message }
 }
-export const logout = async () => { await sb.auth.signOut(); state.cur = 'חריש'; load() }
+export const selectBranch = (city) => { state.cur = city; sessionStorage.setItem('ps-branch', city); return load() }
+export const useInfo = () => { const s = useStore(); return s.info[s.cur] }
+export const logout = async () => { await sb.auth.signOut(); state.cur = sessionStorage.getItem('ps-branch') || 'חריש'; load() }
 
 load()
 setInterval(load, 20000)
