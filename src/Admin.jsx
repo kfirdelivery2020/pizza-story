@@ -19,7 +19,7 @@ const toBlob = (file) => new Promise((res) => {
 })
 
 const NAV = {
-  network: { title: 'הנהלה מרכזית', items: [['overview', 'סקירה כללית'], ['branches', 'סניפים'], ['menu', 'תפריט ראשי']] },
+  network: { title: 'הנהלה מרכזית', items: [['overview', 'סקירה כללית'], ['branches', 'סניפים'], ['menu', 'תפריט ראשי'], ['extras', 'תוספות']] },
   branch: { title: 'ניהול סניף', items: [['overview', 'סקירה'], ['availability', 'זמינות מוצרים'], ['settings', 'הגדרות סניף'], ['orders', 'הזמנות']] },
 }
 
@@ -38,7 +38,7 @@ export default function Admin({ route }) {
   if (!who) return <Login level={level} logo={logo} onOk={setWho} />
   const items = NAV[level].items
   const cur = items.find(([k]) => k === section) ? section : items[0][0]
-  const Page = { overview: level === 'branch' ? BranchOverview : Overview, branches: Branches, menu: Menu, availability: Availability, settings: Settings, orders: Orders }[cur]
+  const Page = { overview: level === 'branch' ? BranchOverview : Overview, branches: Branches, menu: Menu, extras: Extras, availability: Availability, settings: Settings, orders: Orders }[cur]
   return (
     <div className="shell">
       <aside className="side">
@@ -177,22 +177,73 @@ function StaffBox({ city }) {
   )
 }
 
-// מרכיבים מופרדים בפסיק; נשמר ביציאה מהשדה כדי לא לקטוע הקלדה
-const IngInput = ({ p, edit }) => <input className="field" aria-label="מרכיבים" placeholder="מרכיבים, מופרדים בפסיק (למשל: גבינה, זיתים, בצל)" key={p.id + p.ing.join()} defaultValue={p.ing.join(', ')} onBlur={(e) => { const v = e.target.value.split(/[,،]/).map((x) => x.trim()).filter(Boolean); if (v.join() !== p.ing.join()) edit(p.id, 'ing', v) }} />
+function ExtraRow({ e }) {
+  const [d, setD] = useState({ name: e.name, price: e.price })
+  const [saved, setSaved] = useState(false)
+  const upd = (k, v) => { setD({ ...d, [k]: v }); setSaved(false) }
+  const dirty = d.name !== e.name || d.price !== e.price
+  const save = async () => setSaved(!(await actions.setExtra(e.id, d)))
+  return (
+    <div className="row wrapRow">
+      <input className="field" aria-label="שם תוספת" value={d.name} onChange={(x) => upd('name', x.target.value)} />
+      <label className="row">₪<input className="field price" type="number" min="0" aria-label="מחיר תוספת" value={d.price} onChange={(x) => upd('price', +x.target.value)} /></label>
+      <button className="btn sm" disabled={!dirty || !d.name.trim()} onClick={save}>שמירה</button>
+      {saved && !dirty && <span className="tag ok">נשמר ✓</span>}
+      <button className="link" onClick={() => confirm(`למחוק את "${e.name}"? היא תוסר גם מכל הפיצות.`) && actions.deleteExtra(e.id)}>מחיקה</button>
+    </div>
+  )
+}
 
 function Extras() {
   const st = useStore()
   return (
-    <div className="card pad"><h2>תוספות לפיצה</h2>
-      <p className="muted">הרשימה שהלקוח יכול להוסיף לפיצה (בתשלום). כל סניף יכול לסמן תוספת שחסרה אצלו.</p>
-      {st.extras.map((e) => (
-        <div className="row wrapRow" key={e.id}>
-          <input className="field" aria-label="שם תוספת" value={e.name} onChange={(x) => actions.setExtra(e.id, { name: x.target.value })} />
-          <label className="row">₪<input className="field price" type="number" min="0" aria-label="מחיר תוספת" value={e.price} onChange={(x) => actions.setExtra(e.id, { price: +x.target.value })} /></label>
-          <button className="link" onClick={() => confirm(`למחוק את "${e.name}"?`) && actions.deleteExtra(e.id)}>מחיקה</button>
+    <>
+      <Head title="תוספות" sub="מגדירים כאן פעם אחת את כל התוספות והמחירים. אחר כך מסמנים בתפריט הראשי אילו מהן כלולות בכל פיצה. כל סניף יכול לסמן תוספת שחסרה אצלו.">
+        <button className="btn" onClick={() => actions.addExtra()}>+ הוספת תוספת</button>
+      </Head>
+      <div className="card pad">
+        {st.extras.map((e) => <ExtraRow key={e.id} e={e} />)}
+        {!st.extras.length && <p className="empty">אין תוספות עדיין</p>}
+      </div>
+    </>
+  )
+}
+
+function ProductEditor({ p, extras }) {
+  const [d, setD] = useState({ name: p.name, desc: p.desc, cat: p.cat, price: p.price, hidden: p.hidden, noExtras: p.noExtras, ing: p.ing })
+  const [saved, setSaved] = useState(false)
+  const upd = (k, v) => { setD({ ...d, [k]: v }); setSaved(false) }
+  const dirty = Object.keys(d).some((k) => JSON.stringify(d[k]) !== JSON.stringify(p[k]))
+  const save = async () => setSaved(!(await actions.setProduct(p.id, d)))
+  const tick = (id) => upd('ing', d.ing.includes(id) ? d.ing.filter((x) => x !== id) : [...d.ing, id])
+  return (
+    <div className="card mrow">
+      <div className="thumb">{p.img ? <img src={p.img} alt="" /> : <span>אין תמונה</span>}
+        <label className="btn sm ghost up">{p.img ? 'החלפת תמונה' : 'העלאת תמונה'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) actions.uploadImage(p.id, await toBlob(f)) }} /></label>
+        {p.img && <button className="link" onClick={() => actions.setProduct(p.id, { img: '' })}>הסרה</button>}
+      </div>
+      <div className="mfields">
+        <input className="field" aria-label="שם" value={d.name} onChange={(e) => upd('name', e.target.value)} />
+        <input className="field" aria-label="תיאור" placeholder="תיאור" value={d.desc} onChange={(e) => upd('desc', e.target.value)} />
+        <div className="row wrapRow">
+          <select className="field" aria-label="קטגוריה" value={d.cat} onChange={(e) => upd('cat', e.target.value)}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
+          <label className="row">₪<input className="field price" type="number" min="0" aria-label="מחיר" value={d.price} onChange={(e) => upd('price', +e.target.value)} /></label>
+          <Toggle on={!d.hidden} set={(v) => upd('hidden', !v)} label="מוצג ללקוחות" />
         </div>
-      ))}
-      <button className="btn sm ghost" onClick={() => actions.addExtra()}>+ הוספת תוספת</button>
+        {p.pizza && (
+          <fieldset><legend>מרכיבי הפיצה (תוספות שכלולות בה)</legend>
+            <div className="row wrapRow">{extras.map((x) => <label key={x.id} className="opt"><input type="checkbox" checked={d.ing.includes(x.id)} onChange={() => tick(x.id)} /> {x.name}</label>)}
+              {!extras.length && <span className="muted">קודם מגדירים תוספות בעמוד ״תוספות״</span>}</div>
+            <Toggle on={d.noExtras} set={(v) => upd('noExtras', v)} label="פיצה מיוחדת: הלקוח יכול רק להסיר מרכיבים, לא להוסיף" />
+          </fieldset>
+        )}
+        <div className="row wrapRow">
+          <button className="btn sm" disabled={!dirty} onClick={save}>שמירת שינויים</button>
+          {saved && !dirty && <span className="tag ok">נשמר ✓</span>}
+          {dirty && <span className="muted">יש שינויים שלא נשמרו</span>}
+          <button className="link" onClick={() => confirm(`למחוק את "${p.name}"?`) && actions.deleteProduct(p.id)}>מחיקה</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -200,35 +251,14 @@ function Extras() {
 function Menu() {
   const st = useStore()
   const [cat, setCat] = useState('הכל')
-  const edit = (id, k, v) => actions.setProduct(id, { [k]: v })
   const list = st.menu.filter((p) => cat === 'הכל' || p.cat === cat)
   return (
     <>
-      <Head title="תפריט ראשי" sub="שינויים כאן משפיעים על כל הסניפים. זמינות (אזל) מנוהלת בכל סניף בנפרד.">
+      <Head title="תפריט ראשי" sub="שינויים כאן משפיעים על כל הסניפים. זמינות (אזל) מנוהלת בכל סניף בנפרד. אחרי עריכה לוחצים ״שמירת שינויים״.">
         <button className="btn" onClick={() => actions.addProduct()}>+ הוספת מוצר</button>
       </Head>
-      <Extras />
       <div className="row wrapRow">{['הכל', ...CATS].map((c) => <button key={c} className={'chip' + (cat === c ? ' on' : '')} aria-pressed={cat === c} onClick={() => setCat(c)}>{c}</button>)}</div>
-      {list.map((p) => (
-        <div className="card mrow" key={p.id}>
-          <div className="thumb">{p.img ? <img src={p.img} alt="" /> : <span>אין תמונה</span>}
-            <label className="btn sm ghost up">{p.img ? 'החלפת תמונה' : 'העלאת תמונה'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) actions.uploadImage(p.id, await toBlob(f)) }} /></label>
-            {p.img && <button className="link" onClick={() => edit(p.id, 'img', '')}>הסרה</button>}
-          </div>
-          <div className="mfields">
-            <input className="field" aria-label="שם" value={p.name} onChange={(e) => edit(p.id, 'name', e.target.value)} />
-            <input className="field" aria-label="תיאור" placeholder="תיאור" value={p.desc} onChange={(e) => edit(p.id, 'desc', e.target.value)} />
-            <IngInput p={p} edit={edit} />
-            <div className="row wrapRow">
-              <select className="field" aria-label="קטגוריה" value={p.cat} onChange={(e) => edit(p.id, 'cat', e.target.value)}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
-              <label className="row">₪<input className="field price" type="number" min="0" aria-label="מחיר" value={p.price} onChange={(e) => edit(p.id, 'price', +e.target.value)} /></label>
-              <Toggle on={!p.hidden} set={(v) => edit(p.id, 'hidden', !v)} label="מוצג ללקוחות" />
-              {p.pizza && <Toggle on={!p.noExtras} set={(v) => edit(p.id, 'noExtras', !v)} label="הלקוח יכול להוסיף תוספות" />}
-              <button className="link" onClick={() => confirm(`למחוק את "${p.name}"?`) && actions.deleteProduct(p.id)}>מחיקה</button>
-            </div>
-          </div>
-        </div>
-      ))}
+      {list.map((p) => <ProductEditor key={p.id} p={p} extras={st.extras} />)}
     </>
   )
 }
@@ -277,7 +307,7 @@ function Availability() {
           return (
             <div className={'trow' + (out ? ' outrow' : '')} key={p.id}>
               {p.img ? <img className="mini" src={p.img} alt="" /> : <span className="mini" />}
-              <b>{p.name}</b><span className="muted">{p.cat} · {ils(p.price)}{p.ing.length > 0 && ' · מרכיבים: ' + p.ing.join(', ')}{p.pizza && p.noExtras && ' · ללא תוספות'}</span>
+              <b>{p.name}</b><span className="muted">{p.cat} · {ils(p.price)}{p.pizza && p.ing.length > 0 && ' · מרכיבים: ' + st.extras.filter((x) => p.ing.includes(x.id)).map((x) => x.name).join(', ')}{p.pizza && p.noExtras && ' · פיצה מיוחדת'}</span>
               <span className={'tag ' + (out ? 'bad' : 'ok')}>{out ? 'אזל' : 'במלאי'}</span>
               <Toggle on={!out} set={(v) => setOut([p.id], !v)} />
             </div>

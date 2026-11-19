@@ -41,7 +41,7 @@ export async function load() {
   }))
 }
 // בהצלחה לא טוענים מחדש (לא לדרוס הקלדה באמצע); בכשל מציגים שגיאה ומסנכרנים מהשרת
-const run = async (p, reload = false) => { const { error } = await p; if (error) alert('השמירה נכשלה: ' + error.message); if (error || reload) load() }
+const run = async (p, reload = false) => { const { error } = await p; if (error) alert('השמירה נכשלה: ' + error.message); if (error || reload) load(); return error }
 
 export const actions = {
   setProduct(id, patch) { set((s) => { Object.assign(s.menu.find((p) => p.id === id), patch); return s }); return run(sb.from('products').update(toRow(patch)).eq('id', id)) },

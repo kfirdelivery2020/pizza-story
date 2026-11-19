@@ -204,6 +204,8 @@ function Product({ p, extras, add, closed }) {
   const [note, setNote] = useState('')
   const [qty, setQty] = useState(1)
   if (!p) return <States notFound />
+  const inc = p.pizza ? extras.filter((e) => p.ing.includes(e.id)) : []
+  const addable = p.noExtras ? [] : extras.filter((e) => !p.ing.includes(e.id))
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
   const unit = p.price + ex.reduce((a, n) => a + (extras.find((e) => e.name === n)?.price || 0), 0)
   const submit = () => {
@@ -217,15 +219,15 @@ function Product({ p, extras, add, closed }) {
       <p>{p.desc}</p>
       <dl className="kv info"><dt>קטגוריה</dt><dd>{p.cat}</dd><dt>כשרות</dt><dd>{BRANCH.kosher}</dd><dt>מחיר</dt><dd>{ils(p.price)}</dd></dl>
       {p.out && <div className="alert bad" role="status">המוצר אזל זמנית ולא ניתן להוסיפו לסל.</div>}
-      {p.ing.length > 0 && <p className="muted">מרכיבים: {p.ing.join(', ')}</p>}
-      {p.pizza && !p.noExtras && (
+      {inc.length > 0 && <p className="muted">מרכיבים: {inc.map((e) => e.name).join(', ')}</p>}
+      {p.pizza && addable.length > 0 && (
         <fieldset><legend>תוספות <span className="opt-tag">רשות</span></legend>
-          {extras.map((e) => <label key={e.id} className={'opt' + (e.ok ? '' : ' dis')}><input type="checkbox" disabled={!e.ok} checked={ex.includes(e.name)} onChange={() => toggle(ex, setEx, e.name)} /> {e.name} <em>{e.ok ? '+' + ils(e.price) : 'לא זמין'}</em></label>)}
+          {addable.map((e) => <label key={e.id} className={'opt' + (e.ok ? '' : ' dis')}><input type="checkbox" disabled={!e.ok} checked={ex.includes(e.name)} onChange={() => toggle(ex, setEx, e.name)} /> {e.name} <em>{e.ok ? '+' + ils(e.price) : 'לא זמין'}</em></label>)}
         </fieldset>
       )}
-      {p.ing.length > 0 && (
+      {inc.length > 0 && (
         <fieldset><legend>הסרת מרכיבים <span className="opt-tag">רשות</span></legend>
-          {p.ing.map((n) => <label key={n} className="opt"><input type="checkbox" checked={rm.includes(n)} onChange={() => toggle(rm, setRm, n)} /> בלי {n}</label>)}
+          {inc.map((e) => <label key={e.id} className="opt"><input type="checkbox" checked={rm.includes(e.name)} onChange={() => toggle(rm, setRm, e.name)} /> בלי {e.name}</label>)}
         </fieldset>
       )}
       <label className="lbl">הערות להכנה<textarea className="field" value={note} onChange={(e) => setNote(e.target.value)} /></label>
