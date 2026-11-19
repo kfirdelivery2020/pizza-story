@@ -264,7 +264,7 @@ function Availability() {
 
 function Settings() {
   const st = useStore()
-  const b = st.branch, c = st.cur, info = st.info[c]
+  const b = st.branch, c = st.cur, info = st.info[c] || { address: '', phone: '', hours: '' }
   const sec = [['delivery', 'משלוח', 'הלקוחות יכולים להזמין משלוח'], ['pickup', 'איסוף עצמי', 'הלקוחות יכולים להזמין ולאסוף מהסניף']]
   return (
     <>

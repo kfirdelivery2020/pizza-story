@@ -22,13 +22,14 @@ const set = (fn) => { state = fn(structuredClone(state)); emit() }
 export async function load() {
   const [br, pr] = await Promise.all([sb.from('branches').select('*'), sb.from('products').select('*').order('id')])
   if (br.error || pr.error) { set((s) => ({ ...s, error: (br.error || pr.error).message })); return }
-  const h = br.data.find((b) => b.city === state.cur)
+  const h = br.data.find((b) => b.city === state.cur) || br.data.find((b) => b.city === 'חריש')
   const [stock, ord] = await Promise.all([
     sb.from('branch_out_of_stock').select('product_id').eq('branch_id', h.id),
     sb.from('orders').select('*').eq('branch_id', h.id).order('created_at', { ascending: false }), // לקוח אנונימי מקבל רשימה ריקה (RLS)
   ])
-  set(() => ({
-    ready: true, error: '',
+  set((s) => ({
+    ...s, ready: true, error: '', // לשמור את cur ושאר המצב
+    cur: state.cur,
     ids: Object.fromEntries(br.data.map((b) => [b.city, b.id])),
     active: Object.fromEntries(br.data.map((b) => [b.city, b.active])),
     info: Object.fromEntries(br.data.map((b) => [b.city, { address: b.address, phone: b.phone, hours: hoursToText(b.hours) }])),
