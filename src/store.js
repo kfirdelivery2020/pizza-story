@@ -5,14 +5,13 @@ import { createClient } from '@supabase/supabase-js'
 export const sb = createClient('https://ugmrtukkwduyckqvqnnn.supabase.co', 'sb_publishable_ilPoSYYSgfZTDd3aATrhbw_4fxJXHvS')
 
 const NL = String.fromCharCode(10)
-const ING = ['בצל', 'זיתים', 'פטריות', 'תירס']
 const PAY = { cash: 'מזומן', credit: 'אשראי', simply: 'Simply' }
 const hoursToText = (h) => (h || []).map((r) => r.days + ': ' + r.hours).join(NL)
 const textToHours = (t) => t.split(NL).filter(Boolean).map((l) => { const i = l.indexOf(': '); return i < 0 ? { days: l, hours: '' } : { days: l.slice(0, i), hours: l.slice(i + 2) } })
-const COLS = { cat: 'category', desc: 'description', img: 'image_url', pizza: 'is_pizza' }
+const COLS = { cat: 'category', desc: 'description', img: 'image_url', pizza: 'is_pizza', ing: 'ingredients', noExtras: 'no_extras' }
 const toRow = (patch) => Object.fromEntries(Object.entries(patch).map(([k, v]) => [COLS[k] || k, k === 'img' ? v || null : v]))
 
-let state = { ready: false, error: '', menu: [], active: {}, info: {}, ids: {}, cur: 'חריש', branch: { open: true, delivery: true, pickup: true, pay: { cash: true, credit: false, simply: false }, out: [] }, orders: [] }
+let state = { ready: false, error: '', menu: [], active: {}, info: {}, ids: {}, extras: [], cur: 'חריש', branch: { open: true, delivery: true, pickup: true, pay: { cash: true, credit: false, simply: false }, out: [], outEx: [] }, orders: [] }
 // הסניף שהלקוח בחר נשמר לרענון הדף
 if (sessionStorage.getItem('ps-branch')) state.cur = sessionStorage.getItem('ps-branch')
 const subs = new Set()
@@ -23,7 +22,9 @@ export async function load() {
   const [br, pr] = await Promise.all([sb.from('branches').select('*'), sb.from('products').select('*').order('id')])
   if (br.error || pr.error) { set((s) => ({ ...s, error: (br.error || pr.error).message })); return }
   const h = br.data.find((b) => b.city === state.cur) || br.data.find((b) => b.city === 'חריש')
-  const [stock, ord] = await Promise.all([
+  const [ex, exOut, stock, ord] = await Promise.all([
+    sb.from('extras').select('*').order('id'),
+    sb.from('branch_extra_out').select('extra_id').eq('branch_id', h.id),
     sb.from('branch_out_of_stock').select('product_id').eq('branch_id', h.id),
     sb.from('orders').select('*').eq('branch_id', h.id).order('created_at', { ascending: false }), // לקוח אנונימי מקבל רשימה ריקה (RLS)
   ])
@@ -33,8 +34,9 @@ export async function load() {
     ids: Object.fromEntries(br.data.map((b) => [b.city, b.id])),
     active: Object.fromEntries(br.data.map((b) => [b.city, b.active])),
     info: Object.fromEntries(br.data.map((b) => [b.city, { address: b.address, phone: b.phone, hours: hoursToText(b.hours) }])),
-    branch: { open: h.is_open, delivery: h.delivery_enabled, pickup: h.pickup_enabled, pay: { cash: h.pay_cash, credit: h.pay_credit, simply: h.pay_simply }, out: (stock.data || []).map((r) => r.product_id) },
-    menu: pr.data.map((p) => ({ id: p.id, cat: p.category, name: p.name, desc: p.description, price: +p.price, img: p.image_url || '', pizza: p.is_pizza, hidden: p.hidden, ing: p.is_pizza ? ING : [] })),
+    branch: { open: h.is_open, delivery: h.delivery_enabled, pickup: h.pickup_enabled, pay: { cash: h.pay_cash, credit: h.pay_credit, simply: h.pay_simply }, out: (stock.data || []).map((r) => r.product_id), outEx: (exOut.data || []).map((r) => r.extra_id) },
+    extras: (ex.data || []).map((e) => ({ id: e.id, name: e.name, price: +e.price })),
+    menu: pr.data.map((p) => ({ id: p.id, cat: p.category, name: p.name, desc: p.description, price: +p.price, img: p.image_url || '', pizza: p.is_pizza, hidden: p.hidden, ing: p.ingredients || [], noExtras: p.no_extras })),
     orders: (ord.data || []).map((o) => ({ id: o.id, no: o.number, at: new Date(o.created_at).toLocaleString('he-IL'), items: o.items, method: PAY[o.payment_method], status: o.status, sum: { total: +o.total, form: { mode: o.mode } } })),
   }))
 }
@@ -66,6 +68,14 @@ export const actions = {
     set((s) => { const x = new Set(s.branch.out); ids.forEach((i) => (out ? x.add(i) : x.delete(i))); s.branch.out = [...x]; return s })
     const bid = state.ids[state.cur]
     return run(out ? sb.from('branch_out_of_stock').upsert(ids.map((p) => ({ branch_id: bid, product_id: p }))) : sb.from('branch_out_of_stock').delete().eq('branch_id', bid).in('product_id', ids))
+  },
+  addExtra: () => run(sb.from('extras').insert({ name: 'תוספת חדשה', price: 0 }), true),
+  deleteExtra: (id) => run(sb.from('extras').delete().eq('id', id), true),
+  setExtra(id, patch) { set((s) => { Object.assign(s.extras.find((e) => e.id === id), patch); return s }); return run(sb.from('extras').update(patch).eq('id', id)) },
+  setExtraOut(id, out) {
+    set((s) => { s.branch.outEx = out ? [...s.branch.outEx, id] : s.branch.outEx.filter((x) => x !== id); return s })
+    const bid = state.ids[state.cur]
+    return run(out ? sb.from('branch_extra_out').upsert({ branch_id: bid, extra_id: id }) : sb.from('branch_extra_out').delete().eq('branch_id', bid).eq('extra_id', id))
   },
   async addOrder(o, methodKey) {
     const f = o.sum.form

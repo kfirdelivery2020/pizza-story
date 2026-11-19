@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BRANCH, BRANCHES, ZONES, CATS, EXTRAS, PROMOS } from './data.js'
+import { BRANCH, BRANCHES, ZONES, CATS, PROMOS } from './data.js'
 import { useStore, useInfo, actions, load, selectBranch } from './store.js'
 import Admin from './Admin.jsx'
 
@@ -60,7 +60,7 @@ export default function App() {
   if (route === '/') page = <Branches active={st.active} info={st.info} />
   else if (route === '/home') page = <Home menu={menu} />
   else if (route === '/menu') page = <Menu menu={menu} closed={closed} />
-  else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} add={addToCart} closed={closed} />
+  else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} extras={st.extras.map((e) => ({ ...e, ok: !st.branch.outEx.includes(e.id) }))} add={addToCart} closed={closed} />
   else if (route === '/cart') page = <Cart cart={cart} sum={sum} setQty={setQty} del={del} closed={closed} />
   else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} br={br} zones={zones} />
   else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.branch.pay} done={async (o, key) => { const err = await actions.addOrder(o, key); if (err) { alert('שליחת ההזמנה נכשלה: ' + err.message); return false } setOrder(o); setCart([]); go('/done') }} />
@@ -198,14 +198,14 @@ function Menu({ menu, closed }) {
   )
 }
 
-function Product({ p, add, closed }) {
+function Product({ p, extras, add, closed }) {
   const [ex, setEx] = useState([])
   const [rm, setRm] = useState([])
   const [note, setNote] = useState('')
   const [qty, setQty] = useState(1)
   if (!p) return <States notFound />
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
-  const unit = p.price + ex.reduce((a, n) => a + EXTRAS.find((e) => e[0] === n)[1], 0)
+  const unit = p.price + ex.reduce((a, n) => a + (extras.find((e) => e.name === n)?.price || 0), 0)
   const submit = () => {
     add({ key: [p.id, ex, rm, note].join('|'), name: p.name, detail: [...ex.map((x) => '+' + x), ...rm.map((x) => 'בלי ' + x), note].filter(Boolean).join(' · '), price: unit, qty })
   }
@@ -217,15 +217,16 @@ function Product({ p, add, closed }) {
       <p>{p.desc}</p>
       <dl className="kv info"><dt>קטגוריה</dt><dd>{p.cat}</dd><dt>כשרות</dt><dd>{BRANCH.kosher}</dd><dt>מחיר</dt><dd>{ils(p.price)}</dd></dl>
       {p.out && <div className="alert bad" role="status">המוצר אזל זמנית ולא ניתן להוסיפו לסל.</div>}
-      {p.pizza && (
-        <>
-          <fieldset><legend>תוספות <span className="opt-tag">רשות</span></legend>
-            {EXTRAS.map(([n, pr, ok]) => <label key={n} className={'opt' + (ok ? '' : ' dis')}><input type="checkbox" disabled={!ok} checked={ex.includes(n)} onChange={() => toggle(ex, setEx, n)} /> {n} <em>{ok ? '+' + ils(pr) : 'לא זמין'}</em></label>)}
-          </fieldset>
-          <fieldset><legend>הסרת מרכיבים <span className="opt-tag">רשות</span></legend>
-            {p.ing.map((n) => <label key={n} className="opt"><input type="checkbox" checked={rm.includes(n)} onChange={() => toggle(rm, setRm, n)} /> בלי {n}</label>)}
-          </fieldset>
-        </>
+      {p.ing.length > 0 && <p className="muted">מרכיבים: {p.ing.join(', ')}</p>}
+      {p.pizza && !p.noExtras && (
+        <fieldset><legend>תוספות <span className="opt-tag">רשות</span></legend>
+          {extras.map((e) => <label key={e.id} className={'opt' + (e.ok ? '' : ' dis')}><input type="checkbox" disabled={!e.ok} checked={ex.includes(e.name)} onChange={() => toggle(ex, setEx, e.name)} /> {e.name} <em>{e.ok ? '+' + ils(e.price) : 'לא זמין'}</em></label>)}
+        </fieldset>
+      )}
+      {p.ing.length > 0 && (
+        <fieldset><legend>הסרת מרכיבים <span className="opt-tag">רשות</span></legend>
+          {p.ing.map((n) => <label key={n} className="opt"><input type="checkbox" checked={rm.includes(n)} onChange={() => toggle(rm, setRm, n)} /> בלי {n}</label>)}
+        </fieldset>
       )}
       <label className="lbl">הערות להכנה<textarea className="field" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       <div className="spread sticky">
