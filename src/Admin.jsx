@@ -1,52 +1,54 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BRANCHES, CATS } from './data.js'
-import { useStore, update, reset } from './store.js'
-import { login } from './auth.js'
+import { useStore, actions, sb, manageStaff, login, logout, currentStaff } from './store.js'
 
 const NL = String.fromCharCode(10)
 const ils = (n) => `₪${n}`
 const Toggle = ({ on, set, label }) => <label className="sw"><input type="checkbox" role="switch" checked={on} onChange={(e) => set(e.target.checked)} /><span className="knob" />{label && <span>{label}</span>}</label>
 
-// תמונה מועלית מוקטנת ל-640px ונשמרת בדפדפן. shortcut: dataURL ב-localStorage, לעבור לאחסון קבצים בשרת
-const toDataUrl = (file) => new Promise((res) => {
+// תמונה מוקטנת ל-640px לפני העלאה ל-Storage
+const toBlob = (file) => new Promise((res) => {
   const img = new Image()
   img.onload = () => {
     const k = Math.min(1, 640 / Math.max(img.width, img.height)), c = document.createElement('canvas')
     c.width = img.width * k; c.height = img.height * k
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
-    res(c.toDataURL('image/webp', 0.8))
+    c.toBlob(res, 'image/webp', 0.8)
   }
   img.src = URL.createObjectURL(file)
 })
 
 const NAV = {
-  network: { title: 'הנהלה מרכזית', items: [['overview', 'סקירה כללית'], ['branches', 'סניפים'], ['menu', 'תפריט ראשי'], ['system', 'מערכת']] },
-  branch: { title: 'ניהול סניף חריש', items: [['overview', 'סקירה'], ['availability', 'זמינות מוצרים'], ['settings', 'הגדרות סניף'], ['orders', 'הזמנות']] },
+  network: { title: 'הנהלה מרכזית', items: [['overview', 'סקירה כללית'], ['branches', 'סניפים'], ['menu', 'תפריט ראשי']] },
+  branch: { title: 'ניהול סניף', items: [['overview', 'סקירה'], ['availability', 'זמינות מוצרים'], ['settings', 'הגדרות סניף'], ['orders', 'הזמנות']] },
 }
 
 export default function Admin({ route }) {
   const [, , level, section] = route.split('/')
-  const [who, setWho] = useState(() => sessionStorage.getItem('adm-' + level))
+  const [who, setWho] = useState(undefined) // undefined = בודקים סשן קיים
+  const st = useStore()
+  useEffect(() => { if (NAV[level]) currentStaff(level).then(setWho) }, [level])
   const logo = <img className="biglogo" src="logo.png" alt="פיצה סטורי" />
   if (!NAV[level]) return (
     <section className="pick">{logo}<h1>כניסת ניהול</h1>
       <a className="btn full" href="#/admin/branch">כניסת מנהל סניף</a>
       <a className="btn full ghost" href="#/admin/network">כניסת הנהלה מרכזית</a></section>
   )
-  if (!who) return <Login level={level} logo={logo} onOk={(u) => { sessionStorage.setItem('adm-' + level, u); setWho(u) }} />
+  if (who === undefined || (who && !st.ready)) return <p className="empty" role="status">טוען…</p>
+  if (!who) return <Login level={level} logo={logo} onOk={setWho} />
   const items = NAV[level].items
   const cur = items.find(([k]) => k === section) ? section : items[0][0]
-  const Page = { overview: level === 'branch' ? BranchOverview : Overview, branches: Branches, menu: Menu, system: System, availability: Availability, settings: Settings, orders: Orders }[cur]
+  const Page = { overview: level === 'branch' ? BranchOverview : Overview, branches: Branches, menu: Menu, availability: Availability, settings: Settings, orders: Orders }[cur]
   return (
     <div className="shell">
       <aside className="side">
         <img src="logo.png" alt="פיצה סטורי" />
-        <b>{NAV[level].title}</b>
+        <b>{level === 'branch' ? `${NAV[level].title} ${st.cur}` : NAV[level].title}</b>
         <small className="who">מחובר/ת: {who}</small>
         <nav aria-label="ניהול">{items.map(([k, t]) => <a key={k} href={`#/admin/${level}/${k}`} aria-current={k === cur ? 'page' : undefined}>{t}</a>)}</nav>
         <div className="sidefoot">
           <a href="#/home">לאתר הלקוח ↗</a>
-          <button className="link" onClick={() => { sessionStorage.removeItem('adm-' + level); setWho(null) }}>יציאה</button>
+          <button className="link" onClick={async () => { await logout(); setWho(null) }}>יציאה</button>
         </div>
       </aside>
       <main className="adm-main"><Page /></main>
@@ -82,7 +84,7 @@ const Head = ({ title, sub, children }) => <div className="spread ahead"><div><h
 function Overview() {
   const st = useStore()
   const act = Object.values(st.active).filter(Boolean).length
-  const stats = [['סניפים פעילים', act], ['מוצרים בתפריט', st.menu.filter((p) => !p.hidden).length], ['מוצרים מוסתרים', st.menu.filter((p) => p.hidden).length], ['אזלו בסניף חריש', st.harish.out.length], ['הזמנות (דמה)', st.orders.length]]
+  const stats = [['סניפים פעילים', act], ['מוצרים בתפריט', st.menu.filter((p) => !p.hidden).length], ['מוצרים מוסתרים', st.menu.filter((p) => p.hidden).length], [`אזלו בסניף ${st.cur}`, st.branch.out.length], ['הזמנות', st.orders.length]]
   return (
     <>
       <Head title="סקירה כללית" sub="מצב הרשת במבט אחד" />
@@ -116,7 +118,7 @@ function Branches() {
   const [edit, setEdit] = useState(null)
   const list = BRANCHES.filter((b) => b.city.includes(q) || b.region.includes(q))
   const info = (c) => st.info[c] || { address: '', phone: '', hours: '' }
-  const setInfo = (c, k, v) => update((s) => { s.info[c] = { ...info(c), [k]: v }; return s })
+  const setInfo = (c, k, v) => actions.setInfo(c, { [k]: v })
   return (
     <>
       <Head title="סניפים" sub="הפעלת סניפים ופרטי הסניף. סניף פעיל מופיע ללקוחות ברשימת הבחירה." />
@@ -127,7 +129,7 @@ function Branches() {
             <div className="trow">
               <b>{b.city}</b><span className="muted">{b.region}</span>
               <span className={'tag ' + (st.active[b.city] ? 'ok' : 'off')}>{st.active[b.city] ? 'פעיל' : 'לא פעיל'}</span>
-              <Toggle on={!!st.active[b.city]} set={(v) => update((s) => { s.active[b.city] = v; return s })} />
+              <Toggle on={!!st.active[b.city]} set={(v) => actions.setActive(b.city, v)} />
               <button className="btn sm ghost" onClick={() => setEdit(edit === b.city ? null : b.city)}>{edit === b.city ? 'סגירה' : 'פרטי סניף'}</button>
             </div>
             {edit === b.city && (
@@ -135,6 +137,7 @@ function Branches() {
                 <label className="lbl">כתובת<input className="field" value={info(b.city).address} onChange={(e) => setInfo(b.city, 'address', e.target.value)} /></label>
                 <label className="lbl">טלפון<input className="field" value={info(b.city).phone} onChange={(e) => setInfo(b.city, 'phone', e.target.value)} /></label>
                 <div className="wide"><HoursEditor value={info(b.city).hours} onChange={(v) => setInfo(b.city, 'hours', v)} /></div>
+                <div className="wide"><StaffBox city={b.city} /></div>
               </div>
             )}
           </div>
@@ -144,21 +147,51 @@ function Branches() {
   )
 }
 
+function StaffBox({ city }) {
+  const st = useStore()
+  const [list, setList] = useState([])
+  const [u, setU] = useState('')
+  const [p, setP] = useState('')
+  const [msg, setMsg] = useState('')
+  const refresh = () => sb.from('staff').select('username').eq('branch_id', st.ids[city]).then(({ data }) => setList(data || []))
+  useEffect(() => { refresh() }, [city])
+  const gen = () => setP(btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(9)))).replace(/[+/=]/g, 'x'))
+  const call = async (action, username, password) => {
+    setMsg('...')
+    const r = await manageStaff({ action, city, username, password })
+    setMsg(r.error ? r.error : action === 'delete' ? 'המשתמש נמחק' : 'נשמר. העבירו את הסיסמה לצוות הסניף; היא לא תוצג שוב.')
+    if (!r.error) { setU(''); setP(''); refresh() }
+  }
+  return (
+    <fieldset className="hrs"><legend>משתמשי סניף (כניסה לניהול הסניף)</legend>
+      {list.length ? list.map((x) => <div className="row" key={x.username}><b>{x.username}</b><button type="button" className="link" onClick={() => confirm('למחוק את ' + x.username + '?') && call('delete', x.username)}>מחיקה</button></div>) : <p className="muted">אין עדיין משתמש לסניף</p>}
+      <div className="row wrapRow">
+        <input className="field" aria-label="שם משתמש" placeholder="שם משתמש (באנגלית)" value={u} onChange={(e) => setU(e.target.value)} />
+        <input className="field" aria-label="סיסמה" placeholder="סיסמה (8 תווים ומעלה)" value={p} onChange={(e) => setP(e.target.value)} />
+        <button type="button" className="btn sm ghost" onClick={gen}>יצירת סיסמה</button>
+        <button type="button" className="btn sm" disabled={!u || !p} onClick={() => call('upsert', u, p)}>שמירת משתמש</button>
+      </div>
+      <p className="muted">משתמש קיים עם אותו שם מקבל סיסמה חדשה.</p>
+      {msg && <p role="status">{msg}</p>}
+    </fieldset>
+  )
+}
+
 function Menu() {
   const st = useStore()
   const [cat, setCat] = useState('הכל')
-  const edit = (id, k, v) => update((s) => { s.menu.find((p) => p.id === id)[k] = v; return s })
+  const edit = (id, k, v) => actions.setProduct(id, { [k]: v })
   const list = st.menu.filter((p) => cat === 'הכל' || p.cat === cat)
   return (
     <>
       <Head title="תפריט ראשי" sub="שינויים כאן משפיעים על כל הסניפים. זמינות (אזל) מנוהלת בכל סניף בנפרד.">
-        <button className="btn" onClick={() => update((s) => { s.menu.unshift({ id: Date.now(), cat: CATS[0], name: 'מוצר חדש', desc: '', price: 0, pizza: false, ing: [] }); return s })}>+ הוספת מוצר</button>
+        <button className="btn" onClick={() => actions.addProduct()}>+ הוספת מוצר</button>
       </Head>
       <div className="row wrapRow">{['הכל', ...CATS].map((c) => <button key={c} className={'chip' + (cat === c ? ' on' : '')} aria-pressed={cat === c} onClick={() => setCat(c)}>{c}</button>)}</div>
       {list.map((p) => (
         <div className="card mrow" key={p.id}>
           <div className="thumb">{p.img ? <img src={p.img} alt="" /> : <span>אין תמונה</span>}
-            <label className="btn sm ghost up">{p.img ? 'החלפת תמונה' : 'העלאת תמונה'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) edit(p.id, 'img', await toDataUrl(f)) }} /></label>
+            <label className="btn sm ghost up">{p.img ? 'החלפת תמונה' : 'העלאת תמונה'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) actions.uploadImage(p.id, await toBlob(f)) }} /></label>
             {p.img && <button className="link" onClick={() => edit(p.id, 'img', '')}>הסרה</button>}
           </div>
           <div className="mfields">
@@ -168,7 +201,7 @@ function Menu() {
               <select className="field" aria-label="קטגוריה" value={p.cat} onChange={(e) => edit(p.id, 'cat', e.target.value)}>{CATS.map((c) => <option key={c}>{c}</option>)}</select>
               <label className="row">₪<input className="field price" type="number" min="0" aria-label="מחיר" value={p.price} onChange={(e) => edit(p.id, 'price', +e.target.value)} /></label>
               <Toggle on={!p.hidden} set={(v) => edit(p.id, 'hidden', !v)} label="מוצג ללקוחות" />
-              <button className="link" onClick={() => confirm(`למחוק את "${p.name}"?`) && update((s) => { s.menu = s.menu.filter((x) => x.id !== p.id); return s })}>מחיקה</button>
+              <button className="link" onClick={() => confirm(`למחוק את "${p.name}"?`) && actions.deleteProduct(p.id)}>מחיקה</button>
             </div>
           </div>
         </div>
@@ -177,27 +210,17 @@ function Menu() {
   )
 }
 
-function System() {
-  return (
-    <>
-      <Head title="מערכת" sub="כלי הדגמה" />
-      <div className="card pad"><p>איפוס מוחק את כל השינויים בתפריט, בסניפים ובהזמנות בדפדפן הזה וחוזר לנתוני ההתחלה.</p>
-        <button className="btn" onClick={() => confirm('לאפס את כל נתוני ההדגמה?') && reset()}>איפוס נתוני הדגמה</button></div>
-    </>
-  )
-}
-
 function BranchOverview() {
   const st = useStore()
-  const b = st.harish
+  const b = st.branch
   const n = st.menu.filter((p) => !p.hidden).length
   const stats = [['הזמנות חדשות', st.orders.filter((o) => o.status === 'חדשה').length], ['בהכנה', st.orders.filter((o) => o.status === 'בהכנה').length], ['מוצרים שאזלו', b.out.length + ' / ' + n]]
   return (
     <>
-      <Head title="סקירה" sub="פיצה סטורי – חריש" />
+      <Head title="סקירה" sub={`פיצה סטורי – ${st.cur}`} />
       <div className={'card statusbar ' + (b.open ? 'is-open' : 'is-closed')}>
         <div><b>{b.open ? 'הסניף פתוח להזמנות' : 'הסניף סגור להזמנות'}</b><span>הלקוחות רואים את הסטטוס באתר מיידית</span></div>
-        <Toggle on={b.open} set={(v) => update((s) => { s.harish.open = v; return s })} />
+        <Toggle on={b.open} set={(v) => actions.setOpen(v)} />
       </div>
       <div className="stats">{stats.map(([t, v]) => <div className="card stat" key={t}><b>{v}</b><span>{t}</span></div>)}</div>
       <div className="row wrapRow"><a className="btn" href="#/admin/branch/availability">עדכון זמינות מוצרים</a><a className="btn ghost" href="#/admin/branch/orders">לניהול הזמנות</a></div>
@@ -207,11 +230,11 @@ function BranchOverview() {
 
 function Availability() {
   const st = useStore()
-  const b = st.harish
+  const b = st.branch
   const [cat, setCat] = useState('הכל')
   const [q, setQ] = useState('')
   const shown = st.menu.filter((p) => !p.hidden && (cat === 'הכל' || p.cat === cat) && p.name.includes(q))
-  const setOut = (ids, out) => update((s) => { const set = new Set(s.harish.out); ids.forEach((i) => (out ? set.add(i) : set.delete(i))); s.harish.out = [...set]; return s })
+  const setOut = (ids, out) => actions.setOut(ids, out)
   return (
     <>
       <Head title="זמינות מוצרים" sub="כיבוי מוצר מסמן אותו כ״אזל״ ללקוחות הסניף. שמות, תמונות ומחירים מנוהלים בהנהלה המרכזית.">
@@ -241,23 +264,27 @@ function Availability() {
 
 function Settings() {
   const st = useStore()
-  const b = st.harish, info = st.info['חריש']
-  const rows = parseHours(info.hours)
+  const b = st.branch, c = st.cur, info = st.info[c]
+  const sec = [['delivery', 'משלוח', 'הלקוחות יכולים להזמין משלוח'], ['pickup', 'איסוף עצמי', 'הלקוחות יכולים להזמין ולאסוף מהסניף']]
   return (
     <>
-      <Head title="הגדרות סניף" sub="פרטי הסניף (כתובת, טלפון, שעות) מוגדרים בהנהלה המרכזית." />
-      <div className="cols">
-        <div className="card pad"><h2>פרטי הסניף</h2>
-          <dl className="kv"><dt>כתובת</dt><dd>{info.address}</dd><dt>טלפון</dt><dd>{info.phone}</dd></dl>
+      <Head title="הגדרות סניף" sub="כל סניף מעדכן את הפרטים שלו, והשינויים מופיעים באתר הלקוח." />
+      <div className="card pad"><h2>פרטי הסניף</h2>
+        <div className="cols">
+          <label className="lbl">כתובת<input className="field" value={info.address} onChange={(e) => actions.setInfo(c, { address: e.target.value })} /></label>
+          <label className="lbl">טלפון<input className="field" value={info.phone} onChange={(e) => actions.setInfo(c, { phone: e.target.value })} /></label>
         </div>
-        <div className="card pad"><h2>שעות פעילות</h2>
-          <table className="hoursT"><tbody>{rows.map(([d, h]) => <tr key={d}><th scope="row">{d}</th><td>{h}</td></tr>)}</tbody></table>
-        </div>
+        <HoursEditor value={info.hours} onChange={(v) => actions.setInfo(c, { hours: v })} />
+      </div>
+      <div className="card pad"><h2>סוגי שירות</h2><p className="muted">אפשר לכבות משלוח או איסוף עצמי בכל רגע, למשל כשאין שליחים.</p>
+        <div className="paygrid">{sec.map(([k, t, d]) => (
+          <div className="card paycard" key={k}><div><b>{t}</b><span className="muted">{d}</span></div>
+            <Toggle on={b[k]} set={(v) => actions.setService(k, v)} /></div>))}</div>
       </div>
       <div className="card pad"><h2>אמצעי תשלום</h2><p className="muted">רק אמצעי תשלום פעילים מוצגים ללקוחות בסניף.</p>
         <div className="paygrid">{[['cash', 'מזומן', 'תשלום לשליח בעת קבלה'], ['credit', 'אשראי', 'דרך ספק סליקה (בעתיד)'], ['simply', 'Simply', 'דרך Simply (בעתיד)']].map(([k, t, d]) => (
           <div className="card paycard" key={k}><div><b>{t}</b><span className="muted">{d}</span></div>
-            <Toggle on={b.pay[k]} set={(v) => update((s) => { s.harish.pay[k] = v; return s })} /></div>))}</div>
+            <Toggle on={b.pay[k]} set={(v) => actions.setPay(k, v)} /></div>))}</div>
       </div>
     </>
   )
@@ -268,7 +295,7 @@ function Orders() {
   const st = useStore()
   return (
     <>
-      <Head title="הזמנות" sub="הזמנות דמה שבוצעו באתר הלקוח בדפדפן זה" />
+      <Head title="הזמנות" sub="הזמנות הלקוחות של הסניף" />
       <div className="kanban">
         {COLS.map((c, ci) => {
           const list = st.orders.map((o, i) => [o, i]).filter(([o]) => o.status === c)
@@ -279,7 +306,7 @@ function Orders() {
                   <div className="spread"><b>{o.no}</b><small className="muted">{o.at}</small></div>
                   <ul>{o.items.map((x) => <li key={x.key}>{x.qty}× {x.name}</li>)}</ul>
                   <small className="muted">{o.method} · {ils(o.sum.total)} · {o.sum.form.mode === 'pickup' ? 'איסוף' : 'משלוח'}</small>
-                  {ci < 3 && <button className="btn sm full" onClick={() => update((s) => { s.orders[i].status = COLS[ci + 1]; return s })}>העברה ל{COLS[ci + 1]}</button>}
+                  {ci < 3 && <button className="btn sm full" onClick={() => actions.setOrderStatus(o.id, COLS[ci + 1])}>העברה ל{COLS[ci + 1]}</button>}
                 </div>
               ))}
               {!list.length && <p className="muted empty2">אין הזמנות</p>}

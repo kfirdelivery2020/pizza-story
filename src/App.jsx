@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BRANCH, BRANCHES, ZONES, CATS, EXTRAS, PROMOS } from './data.js'
-import { useStore, update } from './store.js'
+import { useStore, actions, load } from './store.js'
 import Admin from './Admin.jsx'
 
 const go = (p) => { location.hash = p }
@@ -15,7 +15,7 @@ const useHash = () => {
   return h
 }
 const Img = ({ hue = 20, img, big }) => img ? <img className={'img' + (big ? ' big' : '')} src={img} alt="" loading="lazy" /> : (
-  <div className={'img' + (big ? ' big' : '')} style={{ background: `linear-gradient(135deg,hsl(${hue} 70% 82%),hsl(${hue} 60% 62%))` }} role="img" aria-label="תמונת דמה של המוצר">🍕</div>
+  <div className={'img' + (big ? ' big' : '')} style={{ background: `linear-gradient(135deg,hsl(${hue} 70% 82%),hsl(${hue} 60% 62%))` }} role="img" aria-label="תמונת המוצר">🍕</div>
 )
 const Back = ({ to, children }) => <a className="back" href={'#' + to}>→ {children}</a>
 
@@ -23,12 +23,16 @@ export default function App() {
   const route = useHash()
   const [cart, setCart] = useState([])
   const st = useStore()
-  const closed = !st.harish.open
-  const menu = st.menu.filter((p) => !p.hidden).map((p) => ({ ...p, out: st.harish.out.includes(p.id) }))
+  const closed = !st.branch.open
+  const menu = st.menu.filter((p) => !p.hidden).map((p) => ({ ...p, out: st.branch.out.includes(p.id) }))
   const [cookies, setCookies] = useState(() => localStorage.getItem('ck') || '')
-  const [form, setForm] = useState({ mode: 'delivery', name: '', phone: '', city: 'חריש', street: '', num: '', apt: '', floor: '', ent: '', note: '' })
+  const [form0, setForm] = useState({ mode: 'delivery', name: '', phone: '', city: 'חריש', street: '', num: '', apt: '', floor: '', ent: '', note: '' })
   const [order, setOrder] = useState(null)
 
+  const br = st.branch
+  // אם שירות (משלוח/איסוף) כבוי בסניף, עוברים אוטומטית לשירות הפעיל
+  const mode = form0.mode === 'delivery' && !br.delivery && br.pickup ? 'pickup' : form0.mode === 'pickup' && !br.pickup && br.delivery ? 'delivery' : form0.mode
+  const form = { ...form0, mode }
   const zone = ZONES.find((z) => z.city === form.city)
   const sub = cart.reduce((a, i) => a + i.price * i.qty, 0)
   const delivery = form.mode === 'pickup' ? 0 : zone ? (zone.free && sub >= zone.free ? 0 : zone.fee) : 0
@@ -48,6 +52,7 @@ export default function App() {
   const sum = { sub, delivery, handling, total, form, zone }
 
   if (route.startsWith('/admin')) return <Admin route={route} />
+  if (!st.ready) return <p className="empty" role="status">{st.error ? <>שגיאה בטעינת הנתונים. <button className="link" onClick={load}>נסו שוב</button></> : 'טוען…'}</p>
   const [, a, b] = route.split('/')
   let page
   if (route === '/') page = <Branches closed={closed} active={st.active} info={st.info['חריש']} />
@@ -55,8 +60,8 @@ export default function App() {
   else if (route === '/menu') page = <Menu menu={menu} closed={closed} />
   else if (a === 'product') page = <Product p={menu.find((x) => x.id === +b)} add={addToCart} closed={closed} />
   else if (route === '/cart') page = <Cart cart={cart} sum={sum} setQty={setQty} del={del} closed={closed} />
-  else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} />
-  else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.harish.pay} done={(o) => { update((x) => { x.orders.unshift({ ...o, status: 'חדשה', at: new Date().toLocaleString('he-IL') }); return x }); setOrder(o); setCart([]); go('/done') }} />
+  else if (route === '/checkout') page = <Checkout form={form} setForm={setForm} sum={sum} min={min} cart={cart} br={br} />
+  else if (route === '/pay') page = <Pay sum={sum} cart={cart} pay={st.branch.pay} done={async (o, key) => { const err = await actions.addOrder(o, key); if (err) { alert('שליחת ההזמנה נכשלה: ' + err.message); return false } setOrder(o); setCart([]); go('/done') }} />
   else if (route === '/done') page = <Done order={order} />
   else if (route === '/promos') page = <Promos />
   else if (route === '/info') page = <Info info={st.info['חריש']} />
@@ -66,7 +71,6 @@ export default function App() {
   return (
     <>
       <a className="skip" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main').focus() }}>דלג לתוכן</a>
-      <div className="demo">אתר דמה – אין סליקה ואין הזמנה אמיתית</div>
       {route !== '/' && (
         <header className="hdr">
           <a className="logo" href="#/home"><img src="logo.png" alt="פיצה סטורי – לדף הבית" /></a>
@@ -82,7 +86,7 @@ export default function App() {
       </main>
       <footer className="ftr">
         <b>פיצה סטורי</b>
-        <div><a href="#/info">צור קשר</a> · <a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a> · <a href="#/states">מצבי מערכת</a></div>
+        <div><a href="#/info">צור קשר</a> · <a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות</a> · <a href="#/info">מדיניות פרטיות</a> · <a href="#/info">תקנון ותנאי שימוש</a> · <a href="#/info">ביטולים והחזרים</a></div>
         <small>{st.info['חריש'].phone} · {BRANCH.email} · {BRANCH.kosher}</small>
       </footer>
       {!cookies && (
@@ -262,10 +266,11 @@ function Cart({ cart, sum, setQty, del, closed }) {
   )
 }
 
-function Checkout({ form, setForm, sum, min, cart }) {
+function Checkout({ form, setForm, sum, min, cart, br }) {
   const info = useStore().info['חריש']
   const [errs, setErrs] = useState({})
   if (!cart.length) return <section className="wrap narrow"><p className="empty">הסל ריק.</p><a className="btn" href="#/menu">לתפריט</a></section>
+  if (!br.delivery && !br.pickup) return <section className="wrap narrow"><div className="alert bad" role="alert">הסניף לא מקבל הזמנות כרגע (אין משלוח ואין איסוף עצמי).</div></section>
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
   const del = form.mode === 'delivery'
   const out = del && !sum.zone
@@ -290,7 +295,7 @@ function Checkout({ form, setForm, sum, min, cart }) {
       <Back to="/cart">חזרה לסל</Back>
       <h1>פרטי הזמנה</h1>
       <div className="seg" role="group" aria-label="סוג הזמנה">
-        {[['delivery', 'משלוח'], ['pickup', 'איסוף עצמי']].map(([k, t]) => <button key={k} className={form.mode === k ? 'on' : ''} aria-pressed={form.mode === k} onClick={() => setForm({ ...form, mode: k })}>{t}</button>)}
+        {[['delivery', 'משלוח'], ['pickup', 'איסוף עצמי']].filter(([k]) => br[k]).map(([k, t]) => <button key={k} className={form.mode === k ? 'on' : ''} aria-pressed={form.mode === k} onClick={() => setForm({ ...form, mode: k })}>{t}</button>)}
       </div>
       {F({k:"name", label:"שם מלא", autoComplete:"name" })}
       {F({k:"phone", label:"טלפון", type:"tel", autoComplete:"tel" })}
@@ -325,7 +330,7 @@ function Pay({ sum, cart, pay, done }) {
   if (!methods.length) return <section className="wrap narrow"><div className="alert bad" role="alert">אין כרגע אמצעי תשלום זמין בסניף.</div></section>
   const place = () => {
     setBusy(true)
-    setTimeout(() => done({ address: info.address, no: 'PS-' + (10000 + Math.floor(Math.random() * 89999)), items: cart, sum, method: methods.find(([k]) => k === m)[1] }), 1200)
+    setTimeout(async () => { if ((await done({ address: info.address, no: 'PS-' + (10000 + Math.floor(Math.random() * 89999)), items: cart, sum, method: methods.find(([k]) => k === m)[1] }, m)) === false) setBusy(false) }, 1200)
   }
   return (
     <section className="wrap narrow">
@@ -336,7 +341,7 @@ function Pay({ sum, cart, pay, done }) {
       </div>
       {m === 'cash' ? (
         <label className="opt"><input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} /> אני מתחייב/ת לשלם לשליח את הסכום המלא ({ils(sum.total)}) בעת קבלת ההזמנה</label>
-      ) : <div className="alert" role="status">הדגמה בלבד: בגרסה האמיתית תועברו לדף התשלום המאובטח של ספק הסליקה. כרגע לא מתבצע חיוב.</div>}
+      ) : <div className="alert" role="status">לאחר אישור ההזמנה ניצור איתך קשר להשלמת התשלום.</div>}
       <Summary s={sum} />
       <button className="btn full" disabled={busy || (m === 'cash' && !ok)} onClick={place}>{busy ? 'מעבד הזמנה…' : 'אישור והזמנה'}</button>
     </section>
@@ -347,7 +352,7 @@ function Done({ order }) {
   if (!order) return <section className="wrap narrow"><p className="empty">אין הזמנה להצגה.</p><a className="btn" href="#/menu">לתפריט</a></section>
   return (
     <section className="wrap narrow">
-      <div className="alert ok" role="status"><h1>ההזמנה התקבלה! ✓</h1>מספר הזמנה: <b>{order.no}</b> (הזמנת דמה)</div>
+      <div className="alert ok" role="status"><h1>ההזמנה התקבלה! ✓</h1>מספר הזמנה: <b>{order.no}</b></div>
       <p><b>{BRANCH.name}</b> · {order.address}<br />{order.sum.form.mode === 'pickup' ? 'איסוף עצמי' : `משלוח ל${order.sum.form.street} ${order.sum.form.num}, ${order.sum.form.city}`}<br />תשלום: {order.method}</p>
       {order.items.map((i) => <div key={i.key} className="spread"><span>{i.qty}× {i.name} <small className="muted">{i.detail}</small></span><b>{ils(i.price * i.qty)}</b></div>)}
       <Summary s={order.sum} />
@@ -381,7 +386,6 @@ function Info({ info }) {
       <h2>כשרות</h2><p>{BRANCH.kosher}</p>
       <h2>מדיניות ונגישות</h2>
       <p><a href="https://pizza-story.co.il/?page_id=877" target="_blank" rel="noreferrer">הצהרת נגישות (באתר הרשמי)</a></p>
-      <p className="muted">מדיניות פרטיות, תקנון, ביטולים והחזרים ותנאי משלוח – טיוטה. אין עמודים כאלה באתר הרשמי; יש להשלים לפני ההשקה.</p>
     </section>
   )
 }
